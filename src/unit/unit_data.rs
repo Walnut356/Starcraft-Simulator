@@ -50,19 +50,19 @@ impl Unit {
         rate!(2.9531),
     );
 
-    // pub const ADEPT: Self = Self::new(
-    //     Base::Adept,
-    //     Faction::Protoss,
-    //     Target::Ground,
-    //     Flags::new_std(Flag::Light, Flag::Biological),
-    //     70,
-    //     70,
-    //     (Weapon::ADEPT, None, None),
-    //     Armor::new(1, 0),
-    //     Cost::new(100, 25, 2, const_real!(30.0)),
-    //     const_real!(0.5),
-    //     const_real!(2.5 * GAME_SPEED),
-    // );
+    pub const ADEPT: Self = Self::new(
+        Base::Adept,
+        Faction::Protoss,
+        Target::Ground,
+        Flags::new_std(Flag::Light, Flag::Biological),
+        70,
+        70,
+        (Weapon::ADEPT, None, None),
+        Armor::new(1, 0),
+        Cost::new(100, 25, 2, duration!(42)),
+        const_real!(0.5),
+        rate!(2.5),
+    );
 
     // --------------------------------------- structures --------------------------------------- //
 
@@ -86,19 +86,19 @@ impl Unit {
         rate!(2.25),
     );
 
-    // pub const MARAUDER: Self = Self::new(
-    //     Base::Marauder,
-    //     Faction::Terran,
-    //     Target::Ground,
-    //     Flags::new_std(Flag::Armored, Flag::Biological),
-    //     125,
-    //     0,
-    //     (Weapon::MARAUDER, None, None),
-    //     Armor::new(1, 0),
-    //     Cost::new(100, 25, 2, const_real!(21)),
-    //     const_real!(0.625),
-    //     const_real!(2.25 * GAME_SPEED),
-    // );
+    pub const MARAUDER: Self = Self::new(
+        Base::Marauder,
+        Faction::Terran,
+        Target::Ground,
+        Flags::new_std(Flag::Armored, Flag::Biological),
+        125,
+        0,
+        (Weapon::MARAUDER, None, None),
+        Armor::new(1, 0),
+        Cost::new(100, 25, 2, duration!(30)),
+        const_real!(0.625),
+        rate!(2.25),
+    );
 
     // --------------------------------------- structures --------------------------------------- //
 
@@ -139,7 +139,23 @@ impl Unit {
         Cost::new(75, 25, 2, duration!(27.0)),
         const_real!(0.625),
         rate!(2.25),
-    ).with_health_regen(rate!(0.273));
+    )
+    .with_health_regen(rate!(0.273));
+
+    pub const HYDRA: Self = Self::new(
+        Base::Hydralisk,
+        Faction::Zerg,
+        Target::Ground,
+        Flags::new_std(Flag::Light, Flag::Biological),
+        90,
+        0,
+        (Weapon::HYDRA, None, None),
+        Armor::new(0, 0),
+        Cost::new(100, 50, 2, duration!(33.0)),
+        const_real!(0.625),
+        rate!(2.25),
+    )
+    .with_health_regen(rate!(0.273));
 
     // --------------------------------------- structures --------------------------------------- //
 }

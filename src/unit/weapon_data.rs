@@ -32,16 +32,19 @@ impl Weapon {
         duration!(0.167),
     );
 
-    // pub const ADEPT: Self = Self::new(
-    //     10,
-    //     1,
-    //     const_real!(2.25 / GAME_SPEED),
-    //     12,
-    //     Some(Flag::Light),
-    //     Target::Ground,
-    //     [1, 1],
-    //     const_real!(4),
-    // );
+    pub const ADEPT: Self = Self::new(
+        10,
+        Multihit::Single,
+        duration!(2.25),
+        12,
+        Some(Flag::Light),
+        Target::Ground,
+        [1, 1],
+        const_real!(4),
+        ProjType::Projectile(rate!(18.75)),
+        duration!(0.5),
+        duration!(0.167),
+    );
 
     // --------------------------------------- structures --------------------------------------- //
 
@@ -65,16 +68,19 @@ impl Weapon {
         duration!(0.05),
     );
 
-    // pub const MARAUDER: Self = Self::new(
-    //     10,
-    //     1,
-    //     const_real!(1.5 / GAME_SPEED),
-    //     10,
-    //     Some(Flag::Armored),
-    //     Target::Ground,
-    //     [1, 1],
-    //     const_real!(6),
-    // );
+    pub const MARAUDER: Self = Self::new(
+        10,
+        Multihit::Single,
+        duration!(1.5),
+        10,
+        Some(Flag::Armored),
+        Target::Ground,
+        [1, 1],
+        const_real!(6),
+        ProjType::Projectile(rate!(20)),
+        duration!(0),
+        duration!(0),
+    );
 
     // --------------------------------------- structures --------------------------------------- //
 
@@ -107,6 +113,20 @@ impl Weapon {
         ProjType::Projectile(rate!(18.75)),
         duration!(0.5),
         duration!(0.167),
+    );
+
+    pub const HYDRA: Self = Self::new(
+        12,
+        Multihit::Single,
+        duration!(0.825),
+        0,
+        None,
+        Target::Both,
+        [1, 0],
+        const_real!(5),
+        ProjType::Projectile(rate!(40)),
+        duration!(0.5607),
+        duration!(0.14),
     );
 
     // --------------------------------------- structures --------------------------------------- //
