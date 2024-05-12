@@ -8,8 +8,8 @@ fn main() {
     let mut c = Coordinator::default();
     c.randomize_seed();
     // dbg!(c.seed);
-    c.t1.add_unit(Unit::STALKER, 10);
-    c.t2.add_unit(Unit::ROACH, 12);
+    c.t1.add_unit(Unit::ROACH, 10);
+    c.t2.add_unit(Unit::ROACH, 10);
 
 
     test_1000(&c);

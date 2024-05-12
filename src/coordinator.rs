@@ -94,6 +94,9 @@ impl Coordinator {
         }
     }
 
+    // for the following few functions, it's easier to delegat to the `Army` impls since they each
+    // require mutable references which would break if we did this iteratively, and I don't want
+    // 2 full copies of the internal laying around.
     fn acquire_targets(&mut self) {
         self.t1.acquire_targets(&mut self.t2, &mut self.rng);
         self.t2.acquire_targets(&mut self.t1, &mut self.rng);
@@ -143,6 +146,8 @@ impl Coordinator {
         }
     }
 
+    // this one will have 2 separate copies because otherwise there's a bunch of borrowchecker hoops
+    // to jump through.
     fn attack(&mut self) {
         let attk = &mut self.t1;
         let dfnd = &mut self.t2;
@@ -248,8 +253,9 @@ impl Coordinator {
         }
     }
 
-    // Nonsense necessary because the callsite requires a mutable borrow on `self` to iterate over
-    // the units, so we can't call any methods that require references to `self`.
+    // Nonsense necessary because the callsite requires a mutable borrow on an `Army` to iterate
+    // over the units, so we can't call any methods that require references to that same `Army`.
+    // That means we're limited to freestanding and associated functions.
     fn apply_damage(u: &mut Unit, t: &mut Unit, time: Real) {
         let weapon = u.try_get_weapon(t).unwrap();
 
@@ -299,6 +305,7 @@ impl Default for Coordinator {
             t1: Default::default(),
             t2: Default::default(),
             time: Default::default(),
+            // It's as good a default seed as any
             rng: StdRng::seed_from_u64(17313471783455232199),
             seed: 17313471783455232199,
         }

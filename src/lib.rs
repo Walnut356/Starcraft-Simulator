@@ -15,6 +15,8 @@ pub use coordinator::*;
 /// first bit is dedicated to the sign, 19 bits for the integer portion, and 12 for the fractional.
 pub use fixed::types::I20F12 as Real;
 
+
+
 /// Converts any number to a `Real` in a non-const context
 #[macro_export]
 macro_rules! real {
@@ -84,10 +86,56 @@ macro_rules! const_real {
     //     const_real!($x).saturating_add(const_real!($y))
     // };
 
+
+
+    // ($x:literal) => {
+    //     {
+    //         let val =  stringify!($x).as_bytes();
+    //         let mut i = 0;
+    //         let mut sign = 1;
+    //         if val[0] == b'-' {
+    //             i += 1;
+    //             sign = -1;
+    //         }
+    //         let mut integer: i32 = 0;
+
+    //         while i < val.len() && val[i] != b'.' {
+    //             integer *= 10;
+    //             integer += (val[i] - b'0') as i32;
+    //             i += 1;
+    //         }
+
+    //         integer *= sign;
+
+    //         i += 1;
+
+    //         let mut frac: u64 = 0;
+    //         let pad = i + 12;
+
+    //         while i < pad {
+    //             frac *= 10;
+    //             if i < val.len() {
+    //                 frac *= 10
+    //             }
+    //             i += 1;
+    //         }
+
+    //         frac /= 244140625;
+
+    //         let bits: i32 = frac as i32 | (integer << 12) as i32;
+
+
+    //         Real::from_bits(bits)
+    //     }
+    // };
+
     // expr must resolve into something `as` castable, which restricts it to i32s and f64s for most
     // practical purposes
     ($x:expr) => {
-        Real::from_bits(($x as f64 * 4096.0) as i32)
+        {
+            use const_soft_float::soft_f64::SoftF64;
+            Real::from_bits(SoftF64($x as f64).mul(const_soft_float::soft_f64::SoftF64(4096.0)).to_f64() as i32)
+        }
     };
 }
 

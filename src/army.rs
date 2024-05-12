@@ -26,11 +26,13 @@ impl Army {
 
     pub(crate) fn heal(&mut self, time: Real) {
         self.units.iter_mut().for_each(|u| {
-            u.health = u.max_health.min(u.health + (u.health_regen * TICK));
-            if u.last_damaged
-                .is_some_and(|t| time - t > u.shield_regen_delay)
-            {
-                u.shields = u.max_shields.min(u.shields + (u.shield_regen * TICK));
+            if u.is_alive() {
+                u.health = u.max_health.min(u.health + (u.health_regen * TICK));
+                if u.last_damaged
+                    .is_some_and(|t| time - t > u.shield_regen_delay)
+                {
+                    u.shields = u.max_shields.min(u.shields + (u.shield_regen * TICK));
+                }
             }
         });
     }
@@ -38,13 +40,13 @@ impl Army {
     /// Any units with no target or a dead target swap
     pub(crate) fn acquire_targets(&mut self, opnt: &mut Army, rng: &mut StdRng) {
         for unit in &mut self.units {
-            if unit.curr_target.is_some_and(|x| opnt.units[x].health <= 0) {
+            if unit.curr_target.is_some_and(|x| opnt.units[x].is_dead()) {
                 unit.curr_target = None;
             }
 
             if unit.curr_target.is_none() {
                 let mut handle = rng.gen_range(0..opnt.units.len());
-                while opnt.units[handle].health <= 0
+                while opnt.units[handle].is_dead()
                     || unit.try_get_weapon(&opnt.units[handle]).is_none()
                 {
                     handle = rng.gen_range(0..opnt.units.len());
