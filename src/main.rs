@@ -8,11 +8,10 @@ fn main() {
     let mut c = Coordinator::default();
     c.randomize_seed();
     // dbg!(c.seed);
-    c.t1.add_unit(Unit::ROACH, 10);
-    c.t2.add_unit(Unit::ROACH, 10);
+    c.a1.add_unit(Unit::MARINE.with_combat_shields(), 20);
+    c.a2.add_unit(Unit::MARINE, 23);
 
-
-    test_1000(&c);
+    simulate(&mut c, 1000);
     // let now = Instant::now();
     // let o = c.simulate();
     // let dur = now.elapsed();
@@ -30,12 +29,11 @@ fn main() {
     // println!("Resources Lost (Winner): {:?}", o.resources_lost().unwrap());
 }
 
-pub fn test_1000(_c: &Coordinator) {
+pub fn simulate(c: &mut Coordinator, run_count: usize) {
     let mut results = [0, 0, 0];
     let mut fight_dur = Real::default();
     let now = Instant::now();
-    for _ in 0..1000 {
-        let mut c = (*_c).clone();
+    for _ in 0..run_count {
         c.randomize_seed();
         let w = c.simulate();
         match w.winner() {
@@ -44,14 +42,18 @@ pub fn test_1000(_c: &Coordinator) {
             None => results[2] += 1,
         }
         fight_dur += c.time;
+        c.reset();
     }
     let dur = now.elapsed();
-    println!("Simulation run time: {:?}", dur);
-    println!("Team 1: {:?}", _c.t1.units.iter().map(|x| x.base).counts());
-    println!("Team 2: {:?}", _c.t2.units.iter().map(|x| x.base).counts());
+    println!("Simulation time ({} runs): {:?}", run_count, dur);
+    println!("Team 1: {:?}", c.a1.units.iter().map(|x| x.base).counts());
+    println!("Team 2: {:?}", c.a2.units.iter().map(|x| x.base).counts());
     println!(
         "Team 1 wins: {} | Team 2 wins: {} | Draws: {} ",
         results[0], results[1], results[2]
     );
-    println!("Average in-game fight duration: {}s", fight_dur / 1000);
+    println!(
+        "Average in-game fight duration: {}s",
+        fight_dur / real!(run_count)
+    );
 }

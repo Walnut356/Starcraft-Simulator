@@ -2,7 +2,7 @@ use crate::*;
 
 impl Unit {
     pub fn with_glaives(mut self) -> Self {
-        self.weapons.0.attack_speed /= const_real!(1.45);
+        self.weapons[0].as_mut().unwrap().attack_speed /= const_real!(1.45);
         self
     }
 

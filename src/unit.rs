@@ -13,49 +13,6 @@ use strum::{Display, EnumString, IntoStaticStr};
 
 use crate::*;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, EnumString, IntoStaticStr, Display)]
-pub enum Flag {
-    None,
-    Light,
-    Armored,
-    Biological,
-    Massive,
-    Mechanical,
-    Psionic,
-    Structure,
-    Heroic,
-    Both,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, EnumString, IntoStaticStr, Display)]
-pub enum Faction {
-    Protoss,
-    Terran,
-    Zerg,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, EnumString, IntoStaticStr, Display)]
-pub enum Target {
-    /// Should only apply to invincible units like ones under stasis
-    None,
-    Ground,
-    Flying,
-    /// Should only apply to the colossus
-    Both,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum State {
-    #[default]
-    Wait,
-    Attack,
-    Attack2,
-    Attack3,
-    Attack4,
-    Move,
-    Dead,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, EnumString, IntoStaticStr, Display)]
 pub enum Base {
     Custom,
@@ -123,20 +80,64 @@ pub enum Base {
     Broodling,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, EnumString, IntoStaticStr, Display)]
-pub enum FlagArmor {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, EnumString, IntoStaticStr, Display)]
+pub enum Flag {
     None,
     Light,
     Armored,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, EnumString, IntoStaticStr, Display)]
-pub enum FlagTaxonomy {
-    None,
     Biological,
+    Massive,
     Mechanical,
+    Psionic,
+    Structure,
+    Heroic,
     Both,
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, EnumString, IntoStaticStr, Display)]
+pub enum Faction {
+    Protoss,
+    Terran,
+    Zerg,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, EnumString, IntoStaticStr, Display)]
+pub enum Target {
+    /// Should only apply to invincible units like ones under stasis
+    None,
+    Ground,
+    Flying,
+    /// Should only apply to the colossus
+    Both,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum State {
+    #[default]
+    Wait,
+    Attack,
+    DmgPoint(Real),
+    Attack2,
+    Attack3,
+    Attack4,
+    Move,
+    Dead,
+}
+
+// #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, EnumString, IntoStaticStr, Display)]
+// pub enum FlagArmor {
+//     None,
+//     Light,
+//     Armored,
+// }
+
+// #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, EnumString, IntoStaticStr, Display)]
+// pub enum FlagTaxonomy {
+//     None,
+//     Biological,
+//     Mechanical,
+//     Both,
+// }
 
 #[derive(Debug, Clone)]
 pub struct Flags {
@@ -288,10 +289,10 @@ macro_rules! builder_fn {
             }
         }
     };
-    ($x:ident.$l:literal, $y: ident, $t:ty) => {
+    ($x:ident[], $t:ty) => {
         paste::paste! {
-            pub const fn [<with_ $y>](mut self, $y: $t) -> Self {
-                self.$x.$l.$y = $y;
+            pub const fn [<with_ $x>](mut self, $x: $t, idx: usize) -> Self {
+                self.$x[idx] = $x;
                 self
             }
         }
@@ -312,14 +313,13 @@ pub struct Unit {
     pub shields: Real,
     pub shield_regen: Real,
     pub shield_regen_delay: Real,
-    pub weapons: (Weapon, Option<Weapon>, Option<Weapon>),
+    pub weapons: [Option<Weapon>; 3],
     pub armor: Armor,
     pub cost: Cost,
     pub size: Real,
     pub move_speed: Real,
     /// Handle to the current target
     pub curr_target: Option<usize>,
-    pub attack_cd: Real,
     pub death_timestamp: Option<Real>,
     pub last_damaged: Option<Real>,
     pub damage_dealt: Real,
@@ -336,7 +336,7 @@ impl Unit {
         flags: Flags,
         max_health: u32,
         max_shields: u32,
-        weapons: (Weapon, Option<Weapon>, Option<Weapon>),
+        weapons: [Option<Weapon>; 3],
         armor: Armor,
         cost: Cost,
         size: Real,
@@ -375,7 +375,6 @@ impl Unit {
             size,
             move_speed,
             curr_target: None,
-            attack_cd: Real::const_from_int(0),
             state: State::Wait,
 
             death_timestamp: None,
@@ -392,14 +391,10 @@ impl Unit {
     builder_fn! {flags, Flags}
     builder_fn! {max_health, Real}
     builder_fn! {max_shields, Real}
-    // this is definitely stupid, but i don't think there are any upgrades that affect
-    // both weapons
-    builder_fn! {weapons.0, damage, Real}
-    builder_fn! {weapons.0, multihit, Multihit}
-    builder_fn! {weapons.0, attack_speed, Real}
-    builder_fn! {weapons.0, bonus_damage, Real}
-    builder_fn! {weapons.0, bonus_vs, Option<Flag>}
-    builder_fn! {weapons.0, range, Real}
+    pub const fn with_weapon(mut self, weapon: Option<Weapon>, idx: usize) -> Self {
+        self.weapons[idx] = weapon;
+        self
+    }
     builder_fn! {cost, build_time, Real}
     builder_fn! {health_regen, Real}
 
@@ -452,26 +447,13 @@ impl Unit {
         self.with_build_time(t.saturating_add(Self::SLOW_WARPIN))
     }
 
-
     pub const fn with_chronoboost(self) -> Self {
         let val = self.cost.build_time.saturating_mul(CHRONOBOOST_MOD);
         self.with_build_time(val)
-
     }
 
     pub fn try_get_weapon(&self, target: &Unit) -> Option<&Weapon> {
-        if self.weapons.0.can_hit(target.kind) {
-            Some(&self.weapons.0)
-        } else if self
-            .weapons
-            .1
-            .as_ref()
-            .is_some_and(|x| x.can_hit(target.kind))
-        {
-            self.weapons.1.as_ref()
-        } else {
-            None
-        }
+        self.weapons.iter().find_map(|w| w.as_ref().filter(|x| x.can_hit(target.kind)))
     }
 
     pub fn is_alive(&self) -> bool {
@@ -512,22 +494,10 @@ impl Unit {
         self.damage_dealt / time
     }
 
-    pub fn ideal_dps(&self, weapon: usize, with_bonus: bool) -> Range<Real> {
-        match weapon {
-            0 => self.weapons.0.dps(with_bonus),
-            1 => self
-                .weapons
-                .1
-                .as_ref()
-                .map(|x| x.dps(with_bonus))
-                .unwrap_or(real!(0)..real!(0)),
-            2 => self
-                .weapons
-                .2
-                .as_ref()
-                .map(|x| x.dps(with_bonus))
-                .unwrap_or(real!(0)..real!(0)),
-            _ => panic!("Invalid weapon number"),
-        }
+    pub fn ideal_dps(&self, weapon_idx: usize, with_bonus: bool) -> Range<Real> {
+        self.weapons[weapon_idx]
+            .as_ref()
+            .map(|x| x.dps(with_bonus))
+            .unwrap_or(real!(0)..real!(0))
     }
 }
