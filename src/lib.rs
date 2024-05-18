@@ -2,20 +2,19 @@
 // pub use fixed::Fixed32;
 pub mod unit;
 pub use unit::{
-    Armor, Base, Cost, Faction, Flag, Flags, Multihit, ProjType, Projectile, State, Target, Unit,
-    Weapon,
+    ActionState, Armor, Base, Cost, Faction, Flag, Flags, Multihit, ProjType, Projectile, Target,
+    Unit, Weapon,
 };
 pub mod army;
 pub use army::Army;
 pub mod coordinator;
-pub mod ttk;
 pub use coordinator::*;
+pub mod pos;
+pub use pos::*;
 
 /// Starcraft 2's internal float point numbers are represented via a 20:12 fixed point format. The
 /// first bit is dedicated to the sign, 19 bits for the integer portion, and 12 for the fractional.
 pub use fixed::types::I20F12 as Real;
-
-
 
 /// Converts any number to a `Real` in a non-const context
 #[macro_export]
@@ -86,8 +85,6 @@ macro_rules! const_real {
     //     const_real!($x).saturating_add(const_real!($y))
     // };
 
-
-
     // ($x:literal) => {
     //     {
     //         let val =  stringify!($x).as_bytes();
@@ -124,19 +121,20 @@ macro_rules! const_real {
 
     //         let bits: i32 = frac as i32 | (integer << 12) as i32;
 
-
     //         Real::from_bits(bits)
     //     }
     // };
 
     // expr must resolve into something `as` castable, which restricts it to i32s and f64s for most
     // practical purposes
-    ($x:expr) => {
-        {
-            use const_soft_float::soft_f64::SoftF64;
-            Real::from_bits(SoftF64($x as f64).mul(const_soft_float::soft_f64::SoftF64(4096.0)).to_f64() as i32)
-        }
-    };
+    ($x:expr) => {{
+        use const_soft_float::soft_f64::SoftF64;
+        Real::from_bits(
+            SoftF64($x as f64)
+                .mul(const_soft_float::soft_f64::SoftF64(4096.0))
+                .to_f64() as i32,
+        )
+    }};
 }
 
 /// Shorthand for `const_real!(x / GAME_SPEED)`, useful for build times, effect durations, etc.
