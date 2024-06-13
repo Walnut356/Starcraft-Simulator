@@ -3,7 +3,6 @@
 
 use std::ops::Deref;
 
-
 use roxmltree::{Children, Document, Node};
 
 use paste::paste;
@@ -73,141 +72,149 @@ include_data!(ABIL, "abildata");
 include_data!(UPGRADE, "upgradedata");
 include_data!(MOVER, "moverdata");
 
-#[derive(Debug)]
-pub enum Tag {
-    /// A Tag that definitely has children, but may or may not have attributes
-    Node {
-        attrs: Map<&'static str, &'static str>,
-        /// Key: Child tag name
-        children: Map<&'static str, Tag>,
-    },
-    /// A Tag without children
-    Leaf {
-        attrs: Map<&'static str, &'static str>,
-    },
-    /// Multiple tags representing a hybrid between an array and a dictionary
-    Array {
-        /// Key: Array index (numeric or identifier), value: attributes map
-        vals: Map<&'static str, Map<&'static str, &'static str>>,
-    },
+#[dynamic]
+pub static UNIT_MAP: Map<&'static str, Tag> = init_units();
+#[dynamic]
+pub static WEAPON_MAP: Map<&'static str, Tag> = init_weapons();
+#[dynamic]
+pub static EFFECT_MAP: Map<&'static str, Tag> = init_effects();
+#[dynamic(lazy)]
+pub static ABIL_MAP: Map<&'static str, Tag> = init_abils();
+#[dynamic]
+pub static UPGRADE_MAP: Map<&'static str, Tag> = init_upgrades();
+#[dynamic]
+pub static MOVERS_MAP: Map<&'static str, Tag> = init_movers();
+
+#[derive(Debug, Default)]
+pub struct Tag {
+    pub kind: &'static str,
+    pub attrs: Map<&'static str, &'static str>,
+    pub children: Map<&'static str, Tag>,
 }
 
-pub fn init_units() -> Map<&'static str, Tag> {
-    let mut map = Map::default();
-
-    for doc in [UNIT_WOL.deref(), &UNIT_HOTS, &UNIT_LOTV, &UNIT_MULTI] {
-        for node in doc.root().children().next().unwrap().children() {
-            let id = node.attribute("id");
-            let attrs: Map<&str, &str> = node.attributes().map(|x| (x.name(), x.value())).collect();
-            if id.is_none() || node.has_attribute("default") {
-                continue;
-            }
-
-            let id = id.unwrap();
-            if let Some(Tag::Node {
-                attrs: a,
-                children: _c,
-            }) = map.get_mut(id)
-            {
-                update_attrs(&attrs, a)
-            } else {
-                map.insert(
-                    id,
-                    Tag::Node {
-                        attrs,
-                        children: Map::default(),
-                    },
-                );
-            }
-
-            let base = map.get_mut(id).unwrap();
-            let child_map = match base {
-                Tag::Node { attrs: _, children } => children,
-                _ => panic!("Unreachable"),
-            };
-
-            init_children(node.children(), child_map)
+impl Tag {
+    fn new(kind: &'static str, attrs: Map<&'static str, &'static str>) -> Self {
+        Self {
+            kind,
+            attrs,
+            children: Default::default(),
         }
     }
-
-    map
 }
 
 /// RECURSIVE
 ///
-/// Traverses child nodes and populates their map entries. Recurses when encoutering a nested structure,
-/// returns on leaves and arrays.
+/// Traverses child nodes and populates their map entries. Recurses when encoutering a nested structure or array,
+/// returns on leaves and non-nested arrays.
 fn init_children(children: Children<'static, 'static>, map: &mut Map<&'static str, Tag>) {
-    for child in children {
+    for child in children.filter(|x| x.is_element()) {
         let name = child.tag_name().name();
         let attrs: Map<&str, &str> = child.attributes().map(|x| (x.name(), x.value())).collect();
 
         // There are some arrays that don't align to these 2 conditions, but I don't need the data
         // from them
         if child.tag_name().name().ends_with("Array") || child.tag_name().name() == "Flags" {
-            let entry = map.entry(name).or_insert(Tag::Array {
-                vals: Map::default(),
+            let entry = map.entry(name).or_insert(Tag {
+                kind: name,
+                attrs: Default::default(),
+                children: Default::default(),
             });
+            let elements = &mut entry.children;
 
-            if let Tag::Array { vals } = entry {
-                // If it doesn't have an index attribute, it's definitely an insertion.
-                // If it does have an index, it could be an insertion or a retrieval
-                if let Some(&idx) = attrs.get("index") {
-                    match idx.parse::<usize>() {
-                        Ok(x) => {
-                            // If the numeric index doesn't exist, we need to insert it in the
-                            // proper position. The numeric index is used as a key since there isn't
-                            // really a great alternative
-                            if vals.get_index_entry(x).is_none() {
-                                vals.insert(idx, attrs);
-                            } else {
-                                update_attrs(&attrs, &mut vals[x])
-                            }
+            // If it doesn't have an index attribute, it's definitely an insertion.
+            // If it does have an index, it could be an insertion or a retrieval
+            if let Some(&idx) = attrs.get("index") {
+                match idx.parse::<usize>() {
+                    Ok(x) => {
+                        // If the numeric index doesn't exist in the map, we need to insert
+                        // it in the proper position. The numeric index is used as a key
+                        // since there isn't really an alternative
+                        if elements.get_index_entry(x).is_none() {
+                            elements.insert(
+                                idx,
+                                Tag {
+                                    kind: name,
+                                    attrs,
+                                    children: Default::default(),
+                                },
+                            );
+                        } else {
+                            update_attrs(&attrs, &mut elements[x].attrs)
                         }
-                        // No numeric index so it must be a retrieval
-                        Err(_) => {
-                            update_attrs(&attrs, vals.entry(idx).or_default());
+                        if child.has_children() {
+                            init_children(
+                                child.children(),
+                                &mut elements.get_index_mut(x).unwrap().1.children,
+                            )
                         }
                     }
-                } else {
-                    // the extra bit of nonsense is because we need &'static str and this is more
-                    // "robust" than defining a const array for number -> str conversion. The leak
-                    // hardly matters for such a short running program
-                    vals.insert(vals.len().to_string().leak(), attrs);
+                    // Index is not a number, so it must be a retrieval
+                    Err(_) => {
+                        let entry = elements
+                            .entry(idx)
+                            .and_modify(|x| update_attrs(&attrs, &mut x.attrs))
+                            .or_insert(Tag::new(idx, attrs));
+                        if child.has_children() {
+                            init_children(child.children(), &mut entry.children)
+                        }
+                    }
                 }
-            }
-        } else if !child.has_children() {
-            if let Some(Tag::Leaf { attrs: a }) = map.get_mut(name) {
-                update_attrs(&attrs, a)
             } else {
-                map.insert(name, Tag::Leaf { attrs });
-            }
-        } else {
-            // Branch
-            if let Some(Tag::Node {
-                attrs: a,
-                children: _,
-            }) = map.get_mut(name)
-            {
-                update_attrs(&attrs, a);
-            } else {
-                map.insert(
-                    name,
-                    Tag::Node {
+                // the extra bit of nonsense is because we need &'static str and this is more
+                // "robust" than defining a const array for number -> str conversion. The leak
+                // hardly matters for such a short running program
+                elements.insert(
+                    elements.len().to_string().leak(),
+                    Tag {
+                        kind: name,
                         attrs,
-                        children: Map::default(),
+                        children: Default::default(),
                     },
                 );
             }
+        } else if !child.has_children() {
+            map
+                .entry(name)
+                .and_modify(|x| update_attrs(&attrs, &mut x.attrs))
+                .or_insert(Tag::new(name, attrs));
+            // if let Some(tag) = map.get_mut(name) {
+            //     update_attrs(&attrs, &mut tag.attrs)
+            // } else {
+            //     map.insert(
+            //         name,
+            //         Tag {
+            //             kind: name,
+            //             attrs,
+            //             children: Default::default(),
+            //         },
+            //     );
+            // }
+        } else {
+            // Branch
+            // if let Some(Tag {
+            //     kind: _,
+            //     attrs: a,
+            //     children: _,
+            // }) = map.get_mut(name)
+            // {
+            //     update_attrs(&attrs, a);
+            // } else {
+            //     map.insert(
+            //         name,
+            //         Tag {
+            //             kind: name,
+            //             attrs,
+            //             children: Map::default(),
+            //         },
+            //     );
+            // }
 
-            let b = map.get_mut(name).unwrap();
-            if let Tag::Node {
-                attrs: _,
-                children: c,
-            } = b
-            {
-                init_children(child.children(), c)
-            }
+            let entry = map
+                .entry(name)
+                .and_modify(|x| update_attrs(&attrs, &mut x.attrs))
+                .or_insert(Tag::new(name, attrs));
+
+            init_children(child.children(), &mut entry.children)
         }
     }
 }
@@ -218,8 +225,35 @@ fn update_attrs(src: &Map<&'static str, &'static str>, dst: &mut Map<&'static st
     }
 }
 
+pub fn init_units() -> Map<&'static str, Tag> {
+    let mut map: Map<&'static str, Tag> = Map::default();
+
+    for doc in [UNIT_WOL.deref(), &UNIT_HOTS, &UNIT_LOTV, &UNIT_MULTI] {
+        for node in doc.root().children().next().unwrap().children() {
+            let id = node.attribute("id");
+            let attrs: Map<&str, &str> = node.attributes().map(|x| (x.name(), x.value())).collect();
+            if id.is_none() || node.has_attribute("default") {
+                continue;
+            }
+
+            let id = id.unwrap();
+            if let Some(t) = map.get_mut(id) {
+                update_attrs(&attrs, &mut t.attrs)
+            } else {
+                map.insert(id, Tag::new(node.tag_name().name(), attrs));
+            }
+
+            let base = map.get_mut(id).unwrap();
+
+            init_children(node.children(), &mut base.children);
+        }
+    }
+
+    map
+}
+
 pub fn init_weapons() -> Map<&'static str, Tag> {
-    let mut map = Map::default();
+    let mut map: Map<&'static str, Tag> = Map::default();
 
     for doc in [
         WEAPON_WOL.deref(),
@@ -235,65 +269,54 @@ pub fn init_weapons() -> Map<&'static str, Tag> {
             }
 
             let id = id.unwrap();
-            if let Some(Tag::Node {
-                attrs: a,
-                children: _c,
-            }) = map.get_mut(id)
-            {
-                update_attrs(&attrs, a)
+            if let Some(t) = map.get_mut(id) {
+                update_attrs(&attrs, &mut t.attrs)
             } else {
-                map.insert(
-                    id,
-                    Tag::Node {
-                        attrs,
-                        children: Map::default(),
-                    },
-                );
+                map.insert(id, Tag::new(node.tag_name().name(), attrs));
             }
 
             let base = map.get_mut(id).unwrap();
-            let child_map = match base {
-                Tag::Node { attrs: _, children } => children,
-                _ => panic!("Unreachable"),
-            };
 
-            init_children(node.children(), child_map);
+            init_children(node.children(), &mut base.children);
 
             // base class defaults found in core.sc2mod. These only populate if they were "missing"
             // from the xml data
-            child_map.entry("DisplayEffect").or_insert(Tag::Leaf {
-                attrs: Map::from_iter([("value", id)]),
-            });
-            child_map.entry("MinScanRange").or_insert(Tag::Leaf {
-                attrs: Map::from_iter([("value", "5")]),
-            });
-            child_map.entry("Range").or_insert(Tag::Leaf {
-                attrs: Map::from_iter([("value", "5")]),
-            });
-            child_map.entry("RangeSlop").or_insert(Tag::Leaf {
-                attrs: Map::from_iter([("value", "1")]),
-            });
-            child_map.entry("ArcSlop").or_insert(Tag::Leaf {
-                attrs: Map::from_iter([("value", "11.25")]),
-            });
-            child_map.entry("Period").or_insert(Tag::Leaf {
-                attrs: Map::from_iter([("value", "0.8332")]),
-            });
-            child_map.entry("DamagePoint").or_insert(Tag::Leaf {
-                attrs: Map::from_iter([("value", "0.167")]),
-            });
-            child_map.entry("Backswing").or_insert(Tag::Leaf {
-                attrs: Map::from_iter([("value", "0.5")]),
-            });
-            child_map.entry("RandomDelayMin").or_insert(Tag::Leaf {
-                attrs: Map::from_iter([("value", "-0.0625")]),
-            });
-            child_map.entry("RandomDelayMax").or_insert(Tag::Leaf {
-                attrs: Map::from_iter([("value", "1.25")]),
-            });
-            child_map.entry("Effect").or_insert(Tag::Leaf {
-                attrs: Map::from_iter([("value", id)]),
-            });
+            base.children
+                .entry("DisplayEffect")
+                .or_insert(Tag::new("DisplayEffect", Map::from_iter([("value", id)])));
+            base.children
+                .entry("MinScanRange")
+                .or_insert(Tag::new("MinScanRange", Map::from_iter([("value", "5")])));
+            base.children
+                .entry("Range")
+                .or_insert(Tag::new("Range", Map::from_iter([("value", "5")])));
+            base.children
+                .entry("RangeSlop")
+                .or_insert(Tag::new("RangeSlop", Map::from_iter([("value", "1")])));
+            base.children
+                .entry("ArcSlop")
+                .or_insert(Tag::new("ArcSlop", Map::from_iter([("value", "11.25")])));
+            base.children
+                .entry("Period")
+                .or_insert(Tag::new("Period", Map::from_iter([("value", "0.8332")])));
+            base.children.entry("DamagePoint").or_insert(Tag::new(
+                "DamagePoint",
+                Map::from_iter([("value", "0.167")]),
+            ));
+            base.children
+                .entry("Backswing")
+                .or_insert(Tag::new("Backswing", Map::from_iter([("value", "0.5")])));
+            base.children.entry("RandomDelayMin").or_insert(Tag::new(
+                "RandomDelayMin",
+                Map::from_iter([("value", "-0.0625")]),
+            ));
+            base.children.entry("RandomDelayMax").or_insert(Tag::new(
+                "RandomDelayMax",
+                Map::from_iter([("value", "1.25")]),
+            ));
+            base.children
+                .entry("Effect")
+                .or_insert(Tag::new("Effect", Map::from_iter([("value", id)])));
         }
     }
 
@@ -301,7 +324,7 @@ pub fn init_weapons() -> Map<&'static str, Tag> {
 }
 
 pub fn init_effects() -> Map<&'static str, Tag> {
-    let mut map = Map::default();
+    let mut map: Map<&'static str, Tag> = Map::default();
 
     for doc in [
         EFFECT_WOL.deref(),
@@ -311,7 +334,8 @@ pub fn init_effects() -> Map<&'static str, Tag> {
     ] {
         for node in doc.root().children().next().unwrap().children() {
             let id = node.attribute("id");
-            let mut attrs: Map<&str, &str> = node.attributes().map(|x| (x.name(), x.value())).collect();
+            let mut attrs: Map<&str, &str> =
+                node.attributes().map(|x| (x.name(), x.value())).collect();
             if id.is_none() || node.has_attribute("default") {
                 continue;
             }
@@ -319,72 +343,50 @@ pub fn init_effects() -> Map<&'static str, Tag> {
             attrs.insert("tagname", node.tag_name().name());
 
             let id = id.unwrap();
-            if let Some(Tag::Node {
-                attrs: a,
-                children: _c,
-            }) = map.get_mut(id)
-            {
-                update_attrs(&attrs, a)
+            if let Some(t) = map.get_mut(id) {
+                update_attrs(&attrs, &mut t.attrs)
             } else {
-                map.insert(
-                    id,
-                    Tag::Node {
-                        attrs,
-                        children: Map::default(),
-                    },
-                );
+                map.insert(id, Tag::new(node.tag_name().name(), attrs));
             }
 
             let base = map.get_mut(id).unwrap();
-            let (attrs, child_map) = match base {
-                Tag::Node { attrs, children } => (attrs, children),
-                _ => panic!("Unreachable"),
-            };
 
             if node.tag_name().name() == "CEffectLaunchMissile" {
                 // it's either this or change all the static strs to Strings. This shouldn't cause
                 // too many problems, especially for a program that's so shortlived
                 let temp: &'static str = format!("{id}Weapon").leak();
 
-                child_map.insert(
+                base.children.insert(
                     "AmmoUnit",
-                    Tag::Leaf {
-                        attrs: Map::from_iter([("value", temp)]),
-                    },
+                    Tag::new("AmmoUnit", Map::from_iter([("value", temp)])),
                 );
             }
 
-            if let Some(&parent_class) = attrs.get("parent") {
+            if let Some(&parent_class) = base.attrs.get("parent") {
                 match parent_class {
                     "DU_WEAP" => {
-                        child_map.insert(
+                        base.children.insert(
                             "Kind",
-                            Tag::Leaf {
-                                attrs: Map::from_iter([("value", "Melee")]),
-                            },
+                            Tag::new("Kind", Map::from_iter([("value", "Melee")])),
                         );
                     }
                     "DU_WEAP_MISSILE" => {
-                        child_map.insert(
+                        base.children.insert(
                             "Kind",
-                            Tag::Leaf {
-                                attrs: Map::from_iter([("value", "Ranged")]),
-                            },
+                            Tag::new("Kind", Map::from_iter([("value", "Ranged")])),
                         );
                     }
                     "DU_WEAP_SPLASH" => {
-                        child_map.insert(
+                        base.children.insert(
                             "Kind",
-                            Tag::Leaf {
-                                attrs: Map::from_iter([("value", "Splash")]),
-                            },
+                            Tag::new("Kind", Map::from_iter([("value", "Splash")])),
                         );
                     }
                     _ => (),
                 };
             }
 
-            init_children(node.children(), child_map)
+            init_children(node.children(), &mut base.children)
         }
     }
 
@@ -392,42 +394,27 @@ pub fn init_effects() -> Map<&'static str, Tag> {
 }
 
 pub fn init_abils() -> Map<&'static str, Tag> {
-    let mut map = Map::default();
+    let mut map: Map<&'static str, Tag> = Map::default();
 
-    for doc in [UNIT_WOL.deref(), &UNIT_HOTS, &UNIT_LOTV, &UNIT_MULTI] {
+    for doc in [ABIL_WOL.deref(), &ABIL_HOTS, &ABIL_LOTV, &ABIL_MULTI] {
         for node in doc.root().children().next().unwrap().children() {
             let id = node.attribute("id");
-            let mut attrs: Map<&str, &str> = node.attributes().map(|x| (x.name(), x.value())).collect();
+            let mut attrs: Map<&str, &str> =
+                node.attributes().map(|x| (x.name(), x.value())).collect();
             if id.is_none() || node.has_attribute("default") {
                 continue;
             }
 
-            attrs.insert("tagname", node.tag_name().name());
-
             let id = id.unwrap();
-            if let Some(Tag::Node {
-                attrs: a,
-                children: _c,
-            }) = map.get_mut(id)
-            {
-                update_attrs(&attrs, a)
+            if let Some(t) = map.get_mut(id) {
+                update_attrs(&attrs, &mut t.attrs)
             } else {
-                map.insert(
-                    id,
-                    Tag::Node {
-                        attrs,
-                        children: Map::default(),
-                    },
-                );
+                map.insert(id, Tag::new(node.tag_name().name(), attrs));
             }
 
             let base = map.get_mut(id).unwrap();
-            let child_map = match base {
-                Tag::Node { attrs: _, children } => children,
-                _ => panic!("Unreachable"),
-            };
 
-            init_children(node.children(), child_map)
+            init_children(node.children(), &mut base.children)
         }
     }
 
@@ -435,9 +422,14 @@ pub fn init_abils() -> Map<&'static str, Tag> {
 }
 
 pub fn init_upgrades() -> Map<&'static str, Tag> {
-        let mut map = Map::default();
+    let mut map: Map<&'static str, Tag> = Map::default();
 
-    for doc in [UNIT_WOL.deref(), &UNIT_HOTS, &UNIT_LOTV, &UNIT_MULTI] {
+    for doc in [
+        UPGRADE_WOL.deref(),
+        &UPGRADE_HOTS,
+        &UPGRADE_LOTV,
+        &UPGRADE_MULTI,
+    ] {
         for node in doc.root().children().next().unwrap().children() {
             let id = node.attribute("id");
             let attrs: Map<&str, &str> = node.attributes().map(|x| (x.name(), x.value())).collect();
@@ -446,29 +438,15 @@ pub fn init_upgrades() -> Map<&'static str, Tag> {
             }
 
             let id = id.unwrap();
-            if let Some(Tag::Node {
-                attrs: a,
-                children: _c,
-            }) = map.get_mut(id)
-            {
-                update_attrs(&attrs, a)
+            if let Some(t) = map.get_mut(id) {
+                update_attrs(&attrs, &mut t.attrs)
             } else {
-                map.insert(
-                    id,
-                    Tag::Node {
-                        attrs,
-                        children: Map::default(),
-                    },
-                );
+                map.insert(id, Tag::new(node.tag_name().name(), attrs));
             }
 
             let base = map.get_mut(id).unwrap();
-            let child_map = match base {
-                Tag::Node { attrs: _, children } => children,
-                _ => panic!("Unreachable"),
-            };
 
-            init_children(node.children(), child_map)
+            init_children(node.children(), &mut base.children)
         }
     }
 
@@ -476,59 +454,38 @@ pub fn init_upgrades() -> Map<&'static str, Tag> {
 }
 
 pub fn init_movers() -> Map<&'static str, Tag> {
-        let mut map = Map::default();
+    let mut map: Map<&'static str, Tag> = Map::default();
 
-    for doc in [UNIT_WOL.deref(), &UNIT_HOTS, &UNIT_LOTV, &UNIT_MULTI] {
+    for doc in [MOVER_WOL.deref(), &MOVER_HOTS, &MOVER_LOTV, &MOVER_MULTI] {
         for node in doc.root().children().next().unwrap().children() {
             let id = node.attribute("id");
-            let mut attrs: Map<&str, &str> = node.attributes().map(|x| (x.name(), x.value())).collect();
+            let mut attrs: Map<&str, &str> =
+                node.attributes().map(|x| (x.name(), x.value())).collect();
             if id.is_none() || node.has_attribute("default") {
                 continue;
             }
 
-            attrs.insert("tagname", node.tag_name().name());
-
-
-
             let id = id.unwrap();
-            if let Some(Tag::Node {
-                attrs: a,
-                children: _c,
-            }) = map.get_mut(id)
-            {
-                update_attrs(&attrs, a)
+            if let Some(t) = map.get_mut(id) {
+                update_attrs(&attrs, &mut t.attrs)
             } else {
-                map.insert(
-                    id,
-                    Tag::Node {
-                        attrs,
-                        children: Map::default(),
-                    },
-                );
+                map.insert(id, Tag::new(node.tag_name().name(), attrs));
             }
 
             let base = map.get_mut(id).unwrap();
-            let child_map = match base {
-                Tag::Node { attrs: _, children } => children,
-                _ => panic!("Unreachable"),
-            };
 
             if node.tag_name().name() == "CMoverMissile" {
-                child_map.insert(
+                base.children.insert(
                     "Acceleration",
-                    Tag::Leaf {
-                        attrs: Map::from_iter([("value", "3200")]),
-                    },
+                    Tag::new("Acceleration", Map::from_iter([("value", "3200")])),
                 );
-                child_map.insert(
+                base.children.insert(
                     "MaxSpeed",
-                    Tag::Leaf {
-                        attrs: Map::from_iter([("value", "18.75")]),
-                    },
+                    Tag::new("MaxSpeed", Map::from_iter([("value", "18.75")])),
                 );
             }
 
-            init_children(node.children(), child_map)
+            init_children(node.children(), &mut base.children)
         }
     }
 
