@@ -100,6 +100,22 @@ impl Tag {
             children: Default::default(),
         }
     }
+
+    pub fn val_of(&self, child: &str) -> &'static str {
+        self.children[child].attrs["value"]
+    }
+
+    pub fn try_val_of(&self, child: &str) -> Option<&'static str> {
+        self.children.get(child).map(|x| x.attrs["value"])
+    }
+
+    pub fn link_of(&self, child: &str) -> &'static str {
+        self.children[child].attrs["Link"]
+    }
+
+    pub fn child_array(&self, child: &str) -> &Map<&'static str, Tag> {
+        &self.children[child].children
+    }
 }
 
 /// RECURSIVE
@@ -111,9 +127,11 @@ fn init_children(children: Children<'static, 'static>, map: &mut Map<&'static st
         let name = child.tag_name().name();
         let attrs: Map<&str, &str> = child.attributes().map(|x| (x.name(), x.value())).collect();
 
-        // There are some arrays that don't align to these 2 conditions, but I don't need the data
+        // There are some arrays that don't align to these conditions, but I don't need the data
         // from them
-        if child.tag_name().name().ends_with("Array") || child.tag_name().name() == "Flags" {
+        if child.tag_name().name().ends_with("Array") || name == "Flags" || name == "Attributes" || name == "CostResource" || name == "Collide" {
+            // `entry` acts as the "container" for the array, the elements are stored in its
+            // `children` map
             let entry = map.entry(name).or_insert(Tag {
                 kind: name,
                 attrs: Default::default(),
@@ -126,9 +144,8 @@ fn init_children(children: Children<'static, 'static>, map: &mut Map<&'static st
             if let Some(&idx) = attrs.get("index") {
                 match idx.parse::<usize>() {
                     Ok(x) => {
-                        // If the numeric index doesn't exist in the map, we need to insert
-                        // it in the proper position. The numeric index is used as a key
-                        // since there isn't really an alternative
+                        // If the numeric index doesn't exist in the map, we insert and use the
+                        // numeric index is used as a key since there isn't really an alternative
                         if elements.get_index_entry(x).is_none() {
                             elements.insert(
                                 idx,
@@ -433,7 +450,7 @@ pub fn init_upgrades() -> Map<&'static str, Tag> {
         for node in doc.root().children().next().unwrap().children() {
             let id = node.attribute("id");
             let attrs: Map<&str, &str> = node.attributes().map(|x| (x.name(), x.value())).collect();
-            if id.is_none() || node.has_attribute("default") {
+            if id.is_none() {
                 continue;
             }
 

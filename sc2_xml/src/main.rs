@@ -1,36 +1,34 @@
+use std::{fs::File, io::Write};
+
 use fxhash::FxHashMap;
+use parser::{init_units, Tag, UNIT_MAP};
 use quanta::Clock;
 use sc2_xml::*;
+use write::{write_units, write_weapons};
 
 pub fn main() {
     let clock = Clock::new();
     let now = clock.now();
-    let units = parser::init_weapons();
+    let all_units = &UNIT_MAP;
+    // let stalker = all_units.get("Stalker").unwrap();
+    let units = mp_units();
+    // let output = write_units(&units);
 
-    let val = units.get("ParticleDisruptors").unwrap();
-    dbg!(val);
-    // let filtered: FxHashMap<&&str, &Tag> = units
-    //     .iter()
-    //     .filter(|(k, v)| match v {
-    //         Tag::Node { attrs, children } => {
-    //             attrs.get("default").is_none() &&
-    //             children.get("EditorCategories").is_some_and(|x| match x {
-    //                 Tag::Leaf { attrs } => attrs
-    //                     .get("value")
-    //                     .is_some_and(|x| x.contains("Unit") || x.contains("Structure")),
-    //                 _ => false,
-    //             }) && children.get("Mob").is_some_and(|x| match x {
-    //                 Tag::Leaf { attrs } => attrs.get("value").is_some_and(|x| *x == "Multiplayer"),
-    //                 _ => false,
-    //             })
-    //         }
-    //         _ => false,
-    //     })
-    //     .collect();
+    // let mut file = File::create("unit_data.rs").unwrap();
+    // file.write_all(output.as_bytes()).unwrap();
+
     // let dur = now.elapsed();
     // dbg!(dur);
 
-    // dbg!("here");
-    // let val = units.get("Ultralisk").unwrap();
+    let output = write_weapons(&units);
+
+    let mut file = File::create("weapon_data.rs").unwrap();
+    file.write_all(output.as_bytes()).unwrap();
+
+    let dur = now.elapsed();
+    dbg!(dur);
+
+
+    // let val = all_units.get("Ultralisk").unwrap();
     // dbg!(val);
 }

@@ -1,11 +1,12 @@
 pub mod parser;
-
+pub mod write;
 pub type Map<K, V> = IndexMap<K, V, FxBuildHasher>;
 use fxhash::FxBuildHasher;
 use indexmap::IndexMap;
 use parser::*;
+use std::fmt::Write;
 
-pub fn get_units() -> Vec<(&'static &'static str, &'static Tag)> {
+pub fn mp_units() -> Vec<(&'static &'static str, &'static Tag)> {
     UNIT_MAP
         .iter()
         .filter(|(_k, v)| {
@@ -14,8 +15,10 @@ pub fn get_units() -> Vec<(&'static &'static str, &'static Tag)> {
                     x.attrs
                         .get("value")
                         .is_some_and(|y| y.contains("Unit") && !y.contains("Structure"))
-                        && x.attrs.get("Mob").is_some_and(|y| *y == "Multiplayer")
                 })
+                && v.children
+                    .get("Mob")
+                    .is_some_and(|y| y.attrs.get("value").is_some_and(|z| *z == "Multiplayer"))
         })
         .collect()
 }
