@@ -1,4 +1,6 @@
 /target
-*.md
+.md
 *.py
 editor_export
+lhs.txt
+rhs.txt
