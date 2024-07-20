@@ -1,7 +1,7 @@
 pub mod parser;
 pub mod write;
-pub type Map<K, V> = IndexMap<K, V, FxBuildHasher>;
-use fxhash::FxBuildHasher;
+pub type Map<K, V> = IndexMap<K, V, RandomState>;
+use ahash::RandomState;
 use indexmap::IndexMap;
 use parser::*;
 use std::fmt::Write;
@@ -10,15 +10,16 @@ pub fn mp_units() -> Vec<(&'static &'static str, &'static Tag)> {
     UNIT_MAP
         .iter()
         .filter(|(_k, v)| {
-            v.attrs.get("default").is_none()
-                && v.children.get("EditorCategories").is_some_and(|x| {
-                    x.attrs
-                        .get("value")
-                        .is_some_and(|y| y.contains("Unit") && !y.contains("Structure"))
-                })
-                && v.children
-                    .get("Mob")
-                    .is_some_and(|y| y.attrs.get("value").is_some_and(|z| *z == "Multiplayer"))
+            v.id() == "Interceptor" || v.id() == "BroodlingDefault" // idk why interceptors aren't marked like other units
+                || v.attrs.get("default").is_none()
+                    && v.children.get("EditorCategories").is_some_and(|x| {
+                        x.attrs
+                            .get("value")
+                            .is_some_and(|y| y.contains("Unit") && !y.contains("Structure"))
+                    })
+                    && v.children
+                        .get("Mob")
+                        .is_some_and(|y| y.attrs.get("value").is_some_and(|z| *z == "Multiplayer"))
         })
         .collect()
 }

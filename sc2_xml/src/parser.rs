@@ -85,7 +85,7 @@ pub static UPGRADE_MAP: Map<&'static str, Tag> = init_upgrades();
 #[dynamic]
 pub static MOVERS_MAP: Map<&'static str, Tag> = init_movers();
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct Tag {
     pub kind: &'static str,
     pub attrs: Map<&'static str, &'static str>,
@@ -115,6 +115,10 @@ impl Tag {
 
     pub fn child_array(&self, child: &str) -> &Map<&'static str, Tag> {
         &self.children[child].children
+    }
+
+    pub fn id(&self) -> &'static str {
+        self.attrs["id"]
     }
 }
 
@@ -249,7 +253,7 @@ pub fn init_units() -> Map<&'static str, Tag> {
         for node in doc.root().children().next().unwrap().children() {
             let id = node.attribute("id");
             let attrs: Map<&str, &str> = node.attributes().map(|x| (x.name(), x.value())).collect();
-            if id.is_none() || node.has_attribute("default") {
+            if id.is_none() {
                 continue;
             }
 
@@ -455,7 +459,11 @@ pub fn init_upgrades() -> Map<&'static str, Tag> {
             }
 
             let id = id.unwrap();
-            if let Some(t) = map.get_mut(id) {
+            if let Some(parent) = attrs.get("parent").and_then(|parent| map.get(parent)) {
+                let parent_children = parent.children.clone();
+                map.insert(id, Tag::new(node.tag_name().name(), attrs));
+                map.get_mut(id).unwrap().children = parent_children;
+            } else if let Some(t) = map.get_mut(id) {
                 update_attrs(&attrs, &mut t.attrs)
             } else {
                 map.insert(id, Tag::new(node.tag_name().name(), attrs));

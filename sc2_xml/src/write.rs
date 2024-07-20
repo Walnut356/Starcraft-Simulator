@@ -7,15 +7,14 @@ pub fn write_units(units: &[(&'static &'static str, &'static Tag)]) -> String {
     let mut output = String::new();
     writeln!(
         output,
-        "use crate::{{const_real, duration, rate, unit::*,}};\n"
+        "use crate::{{const_real, duration, rate, unit::*,}};\n\nimpl Unit {{"
     );
 
     // --------------------------------------- identifiers -------------------------------------- //
-    for (name, unit) in units {
-        if !VALID_UNITS.contains(name) {
-            continue;
-        }
-        let name = match **name {
+    for name in VALID_UNITS {
+        let unit = UNIT_MAP.get(name).unwrap();
+
+        let name = match name {
             "LurkerMP" => "Lurker",
             "LurkerMPBurrowed" => "LurkerBurrowed",
             "LurkerMPEgg" => "LurkerEgg",
@@ -28,6 +27,7 @@ pub fn write_units(units: &[(&'static &'static str, &'static Tag)]) -> String {
             // "QueenMP" => "Queen",
             "HellionTank" => "Hellbat",
             "LiberatorAG" => "LiberatorSieged",
+            "BroodlingDefault" => "Broodling",
 
             x => x,
         };
@@ -44,10 +44,10 @@ pub fn write_units(units: &[(&'static &'static str, &'static Tag)]) -> String {
         writeln!(output, "faction: Faction::{faction},");
 
         // -------------------------------------- collision ------------------------------------- //
-        let plane_array = unit.child_array("PlaneArray");
+        let plane_array = unit.children.get("PlaneArray");
         let coll = match (
-            plane_array.contains_key("Ground"),
-            plane_array.contains_key("Air"),
+            plane_array.is_some_and(|x| x.children.contains_key("Ground")),
+            plane_array.is_some_and(|x| x.children.contains_key("Air")),
         ) {
             (true, false) => "Ground",
             (false, true) => "Flying",
@@ -58,30 +58,30 @@ pub fn write_units(units: &[(&'static &'static str, &'static Tag)]) -> String {
 
         // ---------------------------------------- flags --------------------------------------- //
         let flags_array = unit.child_array("Attributes");
-        writeln!(output, "flags: Flags {{");
-        writeln!(output, "light: {},", flags_array.contains_key("Light"));
-        writeln!(output, "armored: {},", flags_array.contains_key("Armored"));
+        writeln!(output, "flags: Flags::new(");
+        writeln!(output, "{},", flags_array.contains_key("Light"));
+        writeln!(output, "{},", flags_array.contains_key("Armored"));
         writeln!(
             output,
-            "mechanical: {},",
+            "{},",
             flags_array.contains_key("Mechanical")
         );
         writeln!(
             output,
-            "biological: {},",
+            "{},",
             flags_array.contains_key("Biological")
         );
-        writeln!(output, "massive: {},", flags_array.contains_key("Massive"));
-        writeln!(output, "psionic: {},", flags_array.contains_key("Psionic"));
+        writeln!(output, "{},", flags_array.contains_key("Massive"));
+        writeln!(output, "{},", flags_array.contains_key("Psionic"));
         writeln!(
             output,
-            "structure: {},",
+            "{},",
             flags_array.contains_key("Structure")
         );
-        writeln!(output, "heroic: {},", flags_array.contains_key("Heroic"));
+        writeln!(output, "{},", flags_array.contains_key("Heroic"));
         writeln!(
             output,
-            "always_threat: {},",
+            "{},",
             matches!(
                 name,
                 "HighTemplar"
@@ -95,7 +95,7 @@ pub fn write_units(units: &[(&'static &'static str, &'static Tag)]) -> String {
                     | "Viper"
             )
         );
-        writeln!(output, "}},");
+        writeln!(output, "),");
 
         // --------------------------------------- health --------------------------------------- //
         writeln!(output,
@@ -187,15 +187,25 @@ pub fn write_units(units: &[(&'static &'static str, &'static Tag)]) -> String {
             .children
             .get("WeaponArray")
             .map(|x| &x.children)
-            .unwrap_or_else(|| &temp);
+            .unwrap_or_else(|| {
+                if name == "BroodlingDefault" {
+                    UNIT_MAP["Broodling"].child_array("WeaponArray")
+                } else {
+                    &temp
+                }
+            });
+
         let mut count = 0;
         write!(output, "weapons: [");
+
         for (k, v) in weapon_array {
             if k.is_empty()
+                || name == "Carrier" // ignore carrier's pseudo "launch interceptors" weapon
                 || v.attrs.get("Link").is_none()
                 || v.attrs["Link"].is_empty()
                 || v.attrs["Link"] == "Talons"
-            // absolute hack because queen is the only unit that truly has 3 weapons and i'm beyond caring
+                // absolute hack because queen is the only unit that truly has 3 weapons and i'm beyond caring
+                || v.attrs["Link"].ends_with("Fake")
             {
                 continue;
             }
@@ -206,7 +216,7 @@ pub fn write_units(units: &[(&'static &'static str, &'static Tag)]) -> String {
 
             writeln!(
                 output,
-                "Some({}_{}), ",
+                "Some(Weapon::{}_{}), ",
                 name.to_ascii_uppercase(),
                 v.attrs["Link"].to_ascii_uppercase()
             );
@@ -220,6 +230,8 @@ pub fn write_units(units: &[(&'static &'static str, &'static Tag)]) -> String {
         writeln!(output, "],\n}};\n");
     }
 
+    writeln!(output, "}}");
+
     output
 }
 
@@ -227,7 +239,7 @@ pub fn write_weapons(units: &[(&'static &'static str, &'static Tag)]) -> String 
     let mut output = String::new();
     writeln!(
         output,
-        "use crate::{{const_real, duration, unit::*,}};\n"
+        "use crate::{{const_real, duration, unit::*,}};\n\nimpl Weapon {{"
     );
 
     let upgrades = get_upgrades();
@@ -250,13 +262,23 @@ pub fn write_weapons(units: &[(&'static &'static str, &'static Tag)]) -> String 
             // "QueenMP" => "Queen",
             "HellionTank" => "Hellbat",
             "LiberatorAG" => "LiberatorSieged",
-
+            "BroodlingDefault" => "Broodling",
             x => x,
         };
 
-        let Some(weapons) = unit.children.get("WeaponArray") else {
+        // let if + let else should be a crime
+        let Some(weapons) = (if name != "Broodling" {
+            unit.children.get("WeaponArray")
+        } else {
+            UNIT_MAP
+                .get("Broodling")
+                .unwrap()
+                .children
+                .get("WeaponArray")
+        }) else {
             continue;
         };
+
         for (_idx, w) in &weapons.children {
             if w.attrs.get("Link").is_none()
                 || w.attrs["Link"].is_empty() // links are blank if weapon was removed
@@ -384,7 +406,7 @@ pub fn write_weapons(units: &[(&'static &'static str, &'static Tag)]) -> String 
 
             writeln!(
                 output,
-                "range: const_real!({min_range})..=const_real!({range}),"
+                "range: RangeInclusive::new(const_real!({min_range}), const_real!({range})),"
             );
             writeln!(output, "range_slop: const_real!({slop}),");
 
@@ -405,7 +427,7 @@ pub fn write_weapons(units: &[(&'static &'static str, &'static Tag)]) -> String 
 
             writeln!(
                 output,
-                "random_delay: duration!({delay_min})..=duration!({delay_max}),"
+                "random_delay: RangeInclusive::new(duration!({delay_min}), duration!({delay_max})),"
             );
 
             // ------------------------------ dmg point & backswing ----------------------------- //
@@ -448,6 +470,8 @@ pub fn write_weapons(units: &[(&'static &'static str, &'static Tag)]) -> String 
             writeln!(output, "}};\n");
         }
     }
+
+    writeln!(output, "}}");
 
     output
 }
@@ -503,7 +527,7 @@ const WEAP_UPGRADES: [&str; 16] = [
     "ZergFlyerWeaponsLevel1",
 ];
 
-const VALID_UNITS: [&str; 68] = [
+const VALID_UNITS: [&str; 70] = [
     "LurkerMP",
     "LurkerMPBurrowed",
     "LurkerMPEgg",
@@ -516,6 +540,7 @@ const VALID_UNITS: [&str; 68] = [
     "DarkTemplar",
     "Observer",
     "Carrier",
+    "Interceptor",
     "Archon",
     "Phoenix",
     "VoidRay",
@@ -553,6 +578,7 @@ const VALID_UNITS: [&str; 68] = [
     "Immortal",
     "Marauder",
     "BroodLord",
+    "BroodlingDefault",
     "Corruptor",
     "Sentry",
     "Queen",
